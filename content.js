@@ -1,20 +1,20 @@
+const BASE_URL = "https://woojangpark.site/v1";
+
 // ========================================================
-// 1. 버튼 UI 생성 및 스타일링
+// 1. UI 생성 (우측 상단 플로팅 버튼)
 // ========================================================
 function createFloatingButton() {
-    // 이미 버튼이 있으면 중복 생성 방지
     if (document.getElementById("perturba-floating-btn")) return;
 
     const button = document.createElement("button");
     button.id = "perturba-floating-btn";
     button.title = "Perturba로 이미지 보호하기";
 
-    // 버튼 스타일 (원형, 그림자, 우측 하단 고정)
+    // 버튼 스타일 (우측 상단 배치, 원형, 로고 포함)
     Object.assign(button.style, {
         position: "fixed",
-        top: "100px",      // 위에서 100px 아래로 (메뉴바 안 가리게)
-        right: "30px",     // 오른쪽에서 30px 안쪽으로
-        
+        top: "100px",       // 상단에서 100px (메뉴바 회피)
+        right: "30px",      // 우측에서 30px
         zIndex: "9999",
         width: "60px",
         height: "60px",
@@ -29,111 +29,222 @@ function createFloatingButton() {
         transition: "transform 0.2s ease-in-out"
     });
 
-    // 로고 이미지 생성
     const img = document.createElement("img");
-    // manifest.json에 등록된 내부 리소스 접근
     img.src = chrome.runtime.getURL("icon.png");
-    Object.assign(img.style, {
-        width: "35px",
-        height: "auto",
-        pointerEvents: "none" // 이미지 클릭 시 이벤트 버블링 방지
-    });
+    Object.assign(img.style, { width: "35px", height: "auto", pointerEvents: "none" });
 
-    // 버튼에 이미지 추가
     button.appendChild(img);
-
-    // 마우스 호버 효과
+    button.addEventListener("click", openFileSelector);
     button.onmouseover = () => { button.style.transform = "scale(1.1)"; };
     button.onmouseout = () => { button.style.transform = "scale(1.0)"; };
 
-    // 클릭 이벤트 연결
-    button.addEventListener("click", () => {
-        openFileSelector();
-    });
-
-    // 화면에 추가
     document.body.appendChild(button);
 }
 
 // ========================================================
-// 2. 파일 선택창 실행
+// 2. 파일 선택 및 메인 로직
 // ========================================================
 function openFileSelector() {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/*"; // 이미지만 허용
-
-    // 파일이 선택되면 실행될 함수
+    input.accept = "image/jpeg, image/png"; 
     input.onchange = async (e) => {
         const file = e.target.files[0];
-        if (file) {
-            await uploadAndTransform(file);
-        }
+        if (file) await processImage(file);
     };
-
-    input.click(); // 사용자에게 파일 선택창 띄우기
+    input.click();
 }
 
-// ========================================================
-// 3. 백엔드 통신 (업로드 -> 변환 -> 다운로드)
-// ========================================================
-async function uploadAndTransform(file) {
-    // 로딩 표시 (간단하게 alert 사용, 나중에 UI로 변경 가능)
-    alert("🛡️ Perturba: 변환을 시작합니다. 잠시만 기다려주세요...");
-
-    const formData = new FormData();
-    // 백엔드 Controller가 받는 파라미터 이름 (예: @RequestPart("file"))
-    formData.append("file", file); 
-
+async function processImage(file) {
     try {
-        // 1) 업로드 및 변환 요청
-        const response = await fetch("https://woojangpark.site/v1/jobs", { 
-            method: "POST",
-            body: formData,
-            // 중요: 쿠키(로그인 정보)를 같이 보내야 인증됨
-            credentials: "include" 
-        });
+        alert("🛡️ Perturba: 이미지 분석 및 업로드를 시작합니다...");
 
-        if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-                throw new Error("로그인이 필요합니다. woojangpark.site에 로그인해주세요.");
-            }
-            throw new Error(`서버 오류: ${response.status}`);
+        // 1. 메타데이터 추출
+        const meta = await getImageMeta(file);
+        
+        // 2. Presigned URL 발급
+        const uploadInfo = await apiGetUploadUrl(meta);
+
+        // 3. S3 업로드 (SKIP이 아닐 경우)
+        if (uploadInfo.method !== 'SKIP' && uploadInfo.uploadUrl) {
+            await apiUploadToS3(uploadInfo.uploadUrl, file, meta.mimeType);
         }
 
-        const resData = await response.json();
-        console.log("Perturba 응답:", resData);
+        // 4. 업로드 완료 통보
+        const assetData = await apiCompleteAsset(uploadInfo.objectKey, meta);
+        const assetId = assetData.assetId;
 
-        // 2) 결과 처리 (다운로드)
-        // 백엔드 응답 구조에 따라 수정 필요 (예: resData.data.resultUrl)
-        // 지금은 예시로 resultUrl이 있다고 가정하고 다운로드 시도
-        if (resData.data && resData.data.resultUrl) {
-            downloadImage(resData.data.resultUrl, "perturba_protected_" + file.name);
-            alert("✅ 변환 완료! 이미지가 다운로드되었습니다.");
-        } else {
-            // 결과 URL이 바로 안 오는 비동기 방식인 경우
-            alert("✅ 작업이 생성되었습니다! (Job ID: " + (resData.data?.publicId || "Unknown") + ")");
-        }
+        // 5. 작업 생성
+        alert("🛡️ Perturba: 변환 작업을 요청했습니다. 처리 중...");
+        const jobData = await apiCreateJob(assetId);
+        const jobId = jobData.publicId;
+
+        // 6. 폴링 및 다운로드
+        pollJobStatus(jobId, file.name);
 
     } catch (error) {
-        console.error("Perturba Error:", error);
-        alert("❌ 실패: " + error.message);
+        console.error(error);
+        // 401/403 에러면 로그인 안내
+        if (error.message.includes("401") || error.message.includes("403")) {
+            alert("로그인이 필요합니다. 확장프로그램 아이콘을 눌러 로그인해주세요.");
+        } else {
+            alert("❌ 오류 발생: " + error.message);
+        }
     }
 }
 
-// 이미지 다운로드 헬퍼 함수
-function downloadImage(url, filename) {
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+// ========================================================
+// 3. API 호출 함수들
+// ========================================================
+
+async function apiGetUploadUrl(meta) {
+    const res = await fetch(`${BASE_URL}/assets/upload-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            filename: meta.filename,
+            mimeType: meta.mimeType,
+            sizeBytes: meta.sizeBytes,
+            sha256Hex: meta.sha256Hex
+        }),
+        credentials: "include" // 쿠키 전송
+    });
+    if (!res.ok) throw new Error(`Upload URL 실패 (${res.status})`);
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error?.message || "Upload URL Error");
+    return json.data;
+}
+
+async function apiUploadToS3(url, file, mimeType) {
+    const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": mimeType },
+        body: file
+        // S3에는 credentials: include 금지 (CORS 에러남)
+    });
+    if (!res.ok) throw new Error(`S3 업로드 실패 (${res.status})`);
+}
+
+async function apiCompleteAsset(objectKey, meta) {
+    const res = await fetch(`${BASE_URL}/assets/complete`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            objectKey: objectKey,
+            sha256Hex: meta.sha256Hex,
+            width: meta.width,
+            height: meta.height,
+            mimeType: meta.mimeType,
+            sizeBytes: meta.sizeBytes
+        }),
+        credentials: "include"
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error?.message);
+    return json.data;
+}
+
+async function apiCreateJob(assetId) {
+    const res = await fetch(`${BASE_URL}/jobs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            inputAssetId: assetId,
+            intensity: "MEDIUM",
+            notifyVia: "NONE"
+        }),
+        credentials: "include"
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error?.message);
+    return json.data;
+}
+
+async function pollJobStatus(jobId, originalName) {
+    let count = 0;
+    const max = 60; // 60초 제한
+
+    const interval = setInterval(async () => {
+        count++;
+        try {
+            const res = await fetch(`${BASE_URL}/jobs/${jobId}/status`, {
+                method: "GET",
+                credentials: "include"
+            });
+            const json = await res.json();
+            const status = json.data?.status;
+
+            console.log(`Polling... ${status}`);
+
+            if (status === "COMPLETED") {
+                clearInterval(interval);
+                // 결과 조회
+                const resultRes = await fetch(`${BASE_URL}/jobs/${jobId}/result`, {
+                    method: "GET",
+                    credentials: "include"
+                });
+                const resultJson = await resultRes.json();
+                const downloadUrl = resultJson.data?.perturbed?.url;
+                
+                if (downloadUrl) {
+                    downloadImage(downloadUrl, "perturba_" + originalName);
+                    alert("✅ 변환 완료! 이미지를 다운로드합니다.");
+                } else {
+                    alert("❌ 결과 URL이 없습니다.");
+                }
+            } else if (status === "FAILED") {
+                clearInterval(interval);
+                alert("❌ 변환 실패 (서버 오류)");
+            } else if (count >= max) {
+                clearInterval(interval);
+                alert("⚠️ 시간 초과");
+            }
+        } catch (e) {
+            clearInterval(interval);
+            console.error(e);
+        }
+    }, 1000);
 }
 
 // ========================================================
-// 4. 실행 (페이지 로드 시)
+// 4. 유틸리티
 // ========================================================
-// 인스타/트위터는 SPA라서 URL이 바뀔 때 버튼이 사라질 수 있음
-// 1초마다 체크해서 버튼이 없으면 다시 그려줌
+async function getImageMeta(file) {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const sha256Hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            resolve({
+                filename: file.name,
+                mimeType: file.type,
+                sizeBytes: file.size,
+                sha256Hex: sha256Hex,
+                width: img.width,
+                height: img.height
+            });
+            URL.revokeObjectURL(img.src);
+        };
+        img.onerror = reject;
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+function downloadImage(url, filename) {
+    fetch(url)
+        .then(r => r.blob())
+        .then(blob => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+}
+
+// 1초마다 버튼 상태 체크 (SPA 페이지 대응)
 setInterval(createFloatingButton, 1000);

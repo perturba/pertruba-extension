@@ -3,18 +3,25 @@
   "name": "Perturba - 이미지 방어막",
   "version": "1.0",
   "description": "인스타그램/트위터 업로드 전 이미지를 변환하여 보호합니다.",
-  "icons": {
-    "16": "icon.png",
-    "48": "icon.png",
-    "128": "icon.png"
-  },
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "cookies"
   ],
   "host_permissions": [
     "https://woojangpark.site/*"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
   "content_scripts": [
     {
       "matches": [
