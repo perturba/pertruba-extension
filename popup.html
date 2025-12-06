@@ -1,43 +1,51 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Perturba</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Perturba</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-    <header>
-        <div class="logo-container">
-            <img src="icon.png" alt="Perturba" class="logo">
-        </div>
-        <h1>Perturba</h1>
-        <p class="subtitle">이미지 보호 서비스</p>
-    </header>
+  <header>
+    <div class="logo-container">
+      <img src="icon.png" alt="Perturba" class="logo" />
+    </div>
+    <h1>Perturba</h1>
+    <p class="subtitle">얼굴을 지키는 이미지 보호 서비스</p>
+  </header>
 
-    <main>
-        <div id="login-view" class="view-container">
-            <div class="info-text">서비스를 이용하려면<br>로그인이 필요합니다.</div>
-            <button id="btn-guest-login" class="btn btn-primary">
-                 게스트로 시작하기
-            </button>
-            <button id="btn-google-login" class="btn btn-google">
-                <span class="icon">G</span> 구글 계정으로 계속
-            </button>
-        </div>
+  <main>
+    <!-- 로그인 필요 화면 -->
+    <div id="login-view" class="view-container">
+      <div class="info-text">
+        브라우저에서 Perturba를 사용하려면<br />
+        먼저 로그인 또는 게스트 모드를 선택해주세요.
+      </div>
+      <button id="btn-guest-login" class="btn btn-primary">
+        게스트로 간단히 시작하기
+      </button>
+      <button id="btn-google-login" class="btn btn-google">
+        <span class="icon">G</span> 구글 계정으로 계속
+      </button>
+    </div>
 
-        <div id="profile-view" class="view-container hidden">
-            <div class="profile-card">
-                <div class="avatar">👤</div>
-                <h2 id="user-status">사용자님</h2>
-                <p id="user-expire" class="expire-text">정보 로딩 중...</p>
-                <div class="badge">Connected</div>
-            </div>
-            <button id="btn-logout" class="btn btn-outline">로그아웃</button>
-        </div>
-    </main>
+    <!-- 로그인/게스트 프로필 -->
+    <div id="profile-view" class="view-container hidden">
+      <div class="profile-card">
+        <div class="avatar">🛡️</div>
+        <h2 id="user-status">로딩 중...</h2>
+        <p id="user-expire" class="expire-text"></p>
+        <div class="badge" id="connection-badge">Connected</div>
+      </div>
+      <button id="btn-logout" class="btn btn-outline">로그아웃</button>
+    </div>
+  </main>
 
-    <footer><p>© 2025 HyeonWooJin Team</p></footer>
-    <script src="popup.js"></script>
+  <footer>
+    <p>© 2025 HyunWooJin Team</p>
+  </footer>
+
+  <script src="popup.js"></script>
 </body>
 </html>
